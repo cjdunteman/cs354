@@ -4,7 +4,27 @@
 // Posting or sharing this file is prohibited, including any changes/additions.
 //
 ///////////////////////////////////////////////////////////////////////////////
- 
+// Main File:        heapAlloc.c
+// This File:        heapAlloc.c
+// Other Files:      
+// Semester:         CS 354 Spring 2020
+//
+// Author:           CJ Dunteman
+// Email:            cdunteman@wisc.edu
+// CS Login:         clifford
+//
+/////////////////////////// OTHER SOURCES OF HELP /////////////////////////////
+//                   fully acknowledge and credit all sources of help,
+//                   other than Instructors and TAs.
+//
+// Persons:          Identify persons by name, relationship to you, and email.
+//                   Describe in detail the the ideas and help they provided.
+//
+// Online sources:   avoid web searches to solve your problems, but if you do
+//                   search, be sure to include Web URLs and description of
+//                   of any information you find.
+///////////////////////////////////////////////////////////////////////////////
+
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -66,7 +86,8 @@ int allocsize;
  */
 blockHeader *prevHeap = NULL;
 blockHeader *endHeap;
- 
+blockHeader *next;
+
 /* 
  * Function for allocating 'size' bytes of heap memory.
  * Argument size: requested size for the payload
@@ -81,66 +102,64 @@ blockHeader *endHeap;
  * Tips: Be careful with pointer arithmetic and scale factors.
  */
 void* allocHeap(int size) {     
-    if (size <= 0) || (size > allocsize) {
-		return NULL;
+    if(size <= 0 || size > allocsize){ 
+        return NULL;
+    }
+    
+	if (next == NULL) {
+		next = heapStart;
 	}
 
-	int blockSize = size + sizeof(blockHeader);
+	blockHeader* start;
+	int header = 4;
+    int padding = (8 - (header + size) % 8) % 8;
+    int totalSize = header + size + padding;
+    
 
-	if (blockSize % 8 != 0) {
-		blocksize += (8 - blockSize % 8);
-	}
+	start = next;
 
-	if (prevHeap == NULL) {
-		prevHeap = heapStart;
-	}
-
-	blockHeader *currPoint = prevHeap;
-
-	int running = 0;
-
-	while (running == 0) {
-		int headerSize = currPoint -> size_status;
-	
-		if ((currPoint -> size_status & 1) != 0) {
-			currPoint = (blockHeader*)((void*(currPoint + headerSize);
-			if (currPoint -> size_status == 1) {
-				currPoint = heapStart;
+	// Searching
+	while ((next -> size_status & 1) || (((next -> size_status >> 2) << 2) < totalSize)) {
+        if (next -> size_status == 1) {
+            next = heapStart;
+            if (start == heapStart) {
+				return NULL;
 			}
-		}
-		else {
-			running = 1;
-			break;
-		}
-
-		if (currPoint == prevHeap) {
+			continue;
+        }
+        int step = next -> size_status >> 2;
+        if (step == 0) {
 			return NULL;
-		}
+        }
+		next += step;
+        if (next == start) {
+			return NULL;
+    	}
+	}
+    
+	int space = (next -> size_status >> 2) << 2;
+    next -> size_status = totalSize + (next -> size_status & 2) + 1;
+    blockHeader* nextFooter = next + totalSize / 4 - 1;
+    nextFooter->size_status = totalSize;
+    
+	if (space > totalSize) {
+        (nextFooter + 1) -> size_status = space - totalSize + 2;
+        (next + (space>>2) - 1) -> size_status = space - totalSize;
+    }
+    else {
+        (nextFooter + 1) -> size_status += 2;
+    }
+    
+	blockHeader* payload = next + 1;
+    next += totalSize / 4;
+    
+	if (next -> size_status == 1) {
+		next = heapStart;
 	}
 
-	int headerSize = currPoint -> size_status >> 3 << 3;
-	int sizeToStore = headerSize - blockSize;
+	return payload;
+}
 
-	if (sizeToStore >= 8) {
-		blockhHeader *next = (blockHeader*)((void*)currPoint + blockSize);
-		
-		next -> size_status = sizeToStore;
-		next -> size_status += 2;
-
-		currPoint -> size_status = (currPoint -> size_status & 2) + blockSize;
-		currPoint -> size_status += 1;
-
-		blockHeader *footer = (blockHeader*)((void*(next + sizeToStore - 4);
-		footer -> size_status = sizeToStore;
-	} else {
-		currPoint -> size_status += 1;
-	}
-
-	prevHeap = currPoint;
-
-    return ((void*) currPoint) + sizeof(blockHeader);
-} 
- 
 /* 
  * Function for freeing up a previously allocated block.
  * Argument ptr: address of the block to be freed up.
@@ -155,16 +174,12 @@ void* allocHeap(int size) {
  * - Update header(s) and footer as needed.
  */                    
 int freeHeap(void *ptr) {    
-    // Check if ptr is NULL
-	if (ptr == NULL) {
+	// Check if ptr is mulitple of 8
+    if ((int)ptr % 8) {
 		return -1;
 	}
-	// Check if ptr is multiple of 8
-	else if (int(ptr) % 8 != 0) {
-		return -1;
-	}
-	// Check if ptr is outside heap space
-	else if (ptr < (void*)heapStart) || (ptr >= (void*) heapStart + allocsize) {
+	// Check if ptr is outside of the heap space
+	else if (ptr < (void*)heapStart || ptr >= (void*)heapStart + allocsize) {
 		return -1;
 	}
 	// Check if ptr block is freed
@@ -172,13 +187,64 @@ int freeHeap(void *ptr) {
 		return -1;
 	}
 
-	// immediate coalescing
+    blockHeader* currPtr = ((blockHeader*)ptr - 1);
+    int currSize = currPtr -> size_status >> 2;
+    
+	blockHeader* currFooter = currPtr + currSize - 1;
+    blockHeader* succPtr = currFooter + 1;
+    
+	int succSize = succPtr -> size_status >> 2;
+    blockHeader* succFooter = succPtr + succSize - 1;
+    int succFree = (succPtr -> size_status & 1)? 0: 1; 
+    
+	blockHeader* prevPtr;
+    blockHeader* prevFooter;
+    
+	int prevSize;
+    int prevFree = (currPtr -> size_status & 2)? 0: 1;
 
-	// update header, footer
+	// Check if previous block is free 
+    if (prevFree) {
+        prevFooter = currPtr - 1;
+        prevSize = prevFooter -> size_status >> 2;
+        prevPtr = prevFooter - prevSize + 1;
+        if (succFree) {
+            int totalBytes = (succSize + prevSize + currSize) << 2;
+            prevPtr -> size_status = totalBytes + (prevPtr -> size_status & 3);
+            succFooter -> size_status = totalBytes;
+            return 0;
+        }
+        else {
+            int totalBytes = (prevSize + currSize) << 2;
+            prevPtr -> size_status = totalBytes + (prevPtr -> size_status & 3);
+            currFooter -> size_status = totalBytes;
+            if (succPtr -> size_status != 1) {
+				succPtr -> size_status -= 2;
+			}
+			return 0;
+        }
+    }
+    else {
+        if (succFree) {
+            int totalBytes = (currSize + succSize) << 2;
+            currPtr -> size_status = totalBytes + (currPtr -> size_status & 2);
+            succFooter -> size_status = totalBytes;
+            return 0;
+        }
+        else {
+            int totalBytes = currSize << 2;
+            currPtr -> size_status = totalBytes + (currPtr -> size_status & 2);
+            currFooter -> size_status = totalBytes;
+            if (succPtr -> size_status != 1) {
+				succPtr -> size_status -= 2;
+			}
+			return 0;
+        }
+    }
 
-	return -1;
+    return -1;
 } 
- 
+
 /*
  * Function used to initialize the memory allocator.
  * Intended to be called ONLY once by a program.
