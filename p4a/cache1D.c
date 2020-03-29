@@ -22,10 +22,12 @@
 
 int arr[100000];
 
+// Sets the value of every element in the array to its index
 int main() {
 
-	for (int i = 0; i < sizeOf(arr); i++) {
+	for (int i = 0; i < 100000; i++) {
 		arr[i] = i;
 	}
 
 	return 0;
+}

@@ -22,6 +22,9 @@
 
 int arr2D[128][8];
 
+/* Traverse an array and set each element of the array to sum of row, column, 
+   and index
+*/
 int main() {
 	for (int i = 0; i < 100; i++) {
 		for (int row = 0; row < 128; row += 64) {

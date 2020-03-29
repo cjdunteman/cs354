@@ -22,6 +22,8 @@
 
 int arr2D[3000][500];
 
+/* Traverse away in row-wise order and set each element of the array to sum of 
+its row and col indexes */
 int main() {
 	for (int row = 0; row < 3000; row++) {
 		for (int col = 0; col < 500; col++) {
